@@ -165,5 +165,10 @@ async function sendTelegram(token, chatId, text) {
 // HTML ESCAPE
 // ==========================================
 function escapeHtml(text) {
-  return String(text)
-    .replace(/
+    return String(text)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
+}
