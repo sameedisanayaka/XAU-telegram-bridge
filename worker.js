@@ -2,7 +2,9 @@ export default {
   async fetch(request, env) {
     const url = new URL(request.url);
 
-    // Health check
+    // ==============================
+    // HEALTH CHECK
+    // ==============================
     if (request.method === "GET") {
       return new Response(
         "XAU Telegram Bridge is ONLINE",
@@ -10,7 +12,9 @@ export default {
       );
     }
 
-    // Only POST requests are accepted for Telegram alerts
+    // ==============================
+    // ONLY POST
+    // ==============================
     if (request.method !== "POST") {
       return new Response(
         "Method Not Allowed",
@@ -31,16 +35,56 @@ export default {
         };
       }
 
-      // Message from TradingView
+      // ==============================
+      // TELEGRAM WEBHOOK UPDATE
+      // ==============================
+      if (data.update_id || data.message) {
+        const telegramMessage = data.message;
+
+        if (!telegramMessage) {
+          return new Response("OK", { status: 200 });
+        }
+
+        const chatId = telegramMessage.chat?.id;
+        const text = telegramMessage.text || "";
+
+        if (!chatId) {
+          return new Response("No chat ID", { status: 200 });
+        }
+
+        // /start command
+        if (text === "/start") {
+          await sendTelegram(
+            env.TELEGRAM_BOT_TOKEN,
+            chatId,
+            "✅ <b>XAU Trading Alerts Bot is ONLINE</b>\n\nTelegram connection is working."
+          );
+
+          return new Response("OK", { status: 200 });
+        }
+
+        // Test messages
+        await sendTelegram(
+          env.TELEGRAM_BOT_TOKEN,
+          chatId,
+          "📩 <b>Message received</b>\n\n" +
+          escapeHtml(text)
+        );
+
+        return new Response("OK", { status: 200 });
+      }
+
+      // ==============================
+      // TRADINGVIEW ALERT
+      // ==============================
       const message =
-        data.message ||
-        data.text ||
-        data.alert ||
+        data.message ??
+        data.alert ??
+        data.text ??
         body;
 
-      // Chat ID can come from JSON or Cloudflare secret
       const chatId =
-        data.chat_id ||
+        data.chat_id ??
         env.TELEGRAM_CHAT_ID;
 
       if (!env.TELEGRAM_BOT_TOKEN) {
@@ -57,34 +101,16 @@ export default {
         );
       }
 
-      const telegramUrl =
-        `https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/sendMessage`;
-
-      const telegramResponse = await fetch(telegramUrl, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify({
-          chat_id: chatId,
-          text: String(message),
-          parse_mode: "HTML"
-        })
-      });
-
-      const result = await telegramResponse.text();
-
-      if (!telegramResponse.ok) {
-        return new Response(
-          `Telegram error: ${result}`,
-          { status: 502 }
-        );
-      }
+      await sendTelegram(
+        env.TELEGRAM_BOT_TOKEN,
+        chatId,
+        String(message)
+      );
 
       return new Response(
         JSON.stringify({
           ok: true,
-          telegram: JSON.parse(result)
+          message: "Telegram message sent"
         }),
         {
           status: 200,
@@ -102,3 +128,42 @@ export default {
     }
   }
 };
+
+
+// ==========================================
+// SEND TELEGRAM MESSAGE
+// ==========================================
+async function sendTelegram(token, chatId, text) {
+  const telegramUrl =
+    `https://api.telegram.org/bot${token}/sendMessage`;
+
+  const response = await fetch(telegramUrl, {
+    method: "POST",
+
+    headers: {
+      "Content-Type": "application/json"
+    },
+
+    body: JSON.stringify({
+      chat_id: chatId,
+      text: text,
+      parse_mode: "HTML"
+    })
+  });
+
+  const result = await response.text();
+
+  if (!response.ok) {
+    throw new Error(`Telegram error: ${result}`);
+  }
+
+  return result;
+}
+
+
+// ==========================================
+// HTML ESCAPE
+// ==========================================
+function escapeHtml(text) {
+  return String(text)
+    .replace(/
